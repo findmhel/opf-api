@@ -126,3 +126,25 @@ Acesse a documentação interativa em:
 
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
+
+### Notas importantes sobre produção
+
+- **Não** inclua datasets grandes ou modelos pesados diretamente no repositório (ver `.gitignore`).
+- Armazene modelos/dados grandes em um storage (S3/GCS/Blob). No startup da API, faça o download para um diretório temporário ou monte um volume.
+- Para configurar variáveis de ambiente sensíveis (DB, S3 credentials), use secrets do provedor de deploy (ex.: GitHub Actions secrets, variables no Heroku/Render/Cloud Run).
+
+### Rodando em produção com Docker (exemplo)
+
+Dockerfile (exemplo simplificado):
+
+```Dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt ./
+RUN pip install -r requirements.txt
+COPY . .
+# Download model from S3 if necessário (script ou entrypoint pode fazer isso)
+CMD ["python", "run.py"]
+```
+
+No pipeline de CI, preencha os secrets e, se necessário, baixe o modelo do storage antes de iniciar a API.
