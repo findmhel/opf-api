@@ -1,33 +1,56 @@
 import json
-from pyspark.ml import PipelineModel
-from app.config import MODEL_PATH, METADATA_PATH
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from pathlib import Path
+from app.config import MODEL_PATH, METADATA_PATH
 
 
-def load_metadata():
+# Lazy caches
+_metadata_cache: Optional[Dict[str, Any]] = None
+_spark_model_cache: Optional[Any] = None
+
+
+def load_metadata() -> Dict[str, Any]:
+    global _metadata_cache
+    if _metadata_cache is not None:
+        return _metadata_cache
     try:
         with open(METADATA_PATH, "r") as f:
-            return json.load(f)
+            _metadata_cache = json.load(f)
     except Exception:
-        return {}
+        _metadata_cache = {}
+    return _metadata_cache
 
 
-def load_model():
-    return PipelineModel.load(MODEL_PATH)
+def _load_spark_model_internal(path: str):
+    # internal helper to avoid importing pyspark at module import time
+    from pyspark.ml import PipelineModel
+    return PipelineModel.load(path)
 
 
-metadata = load_metadata()
-model = load_model()
+def get_spark_model() -> Optional[Any]:
+    """Lazily carrega o PipelineModel do Spark apenas se for necessário.
+
+    Retorna None se o modelo não existir no caminho configurado.
+    """
+    global _spark_model_cache
+    if _spark_model_cache is not None:
+        return _spark_model_cache
+
+    model_path = Path(MODEL_PATH)
+    if not model_path.exists():
+        return None
+
+    try:
+        _spark_model_cache = _load_spark_model_internal(str(model_path))
+    except Exception:
+        # falha ao carregar Spark model — propague None para que o serviço escolha sklearn
+        _spark_model_cache = None
+    return _spark_model_cache
 
 
 def load_model_from(path: str):
-    """Carrega um PipelineModel de um caminho arbitrário.
-
-    Exemplo de uso:
-        m = load_model_from('/content/modelo_openfinance_rf')
-        pred = predict_with_model(m, df_novo)
-    """
+    """Carrega um PipelineModel de um caminho arbitrário (lazy import)."""
+    from pyspark.ml import PipelineModel
     return PipelineModel.load(path)
 
 

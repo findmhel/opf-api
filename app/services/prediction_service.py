@@ -1,5 +1,5 @@
 from pyspark.sql import Row
-from app.model_loader import model, metadata, load_sklearn_model, predict_sklearn
+from app.model_loader import load_sklearn_model, predict_sklearn, get_spark_model, load_model_from
 from app.spark_session import spark
 from app.utils.feature_utils import extract_assembler_input_cols
 from app.utils.explanations import compute_global_importance
@@ -7,7 +7,13 @@ import os
 from pathlib import Path
 
 
-feature_names = extract_assembler_input_cols(model)
+_spark_model = get_spark_model()
+feature_names = []
+if _spark_model is not None:
+    try:
+        feature_names = extract_assembler_input_cols(_spark_model)
+    except Exception:
+        feature_names = []
 
 # Cache sklearn model object to avoid repeated loads
 _sklearn_cache = {
@@ -73,6 +79,11 @@ def run_prediction(data: dict):
         }
 
     # Caso contrário, usa Spark pipeline
+    spark_model = _spark_model or get_spark_model()
+    if spark_model is None:
+        # Nenhum modelo disponível
+        raise RuntimeError('Nenhum modelo disponível: configure SKLEARN_MODEL_PATH ou garanta MODEL_PATH com pipeline Spark')
+
     normalized_data = {
         "Faixa etária": data.get("Faixa_etaria") or data.get('Faixa etária'),
         "Estado": data.get("Estado"),
@@ -97,7 +108,7 @@ def run_prediction(data: dict):
     }
 
     df = spark.createDataFrame([Row(**normalized_data)])
-    out = model.transform(df)
+    out = spark_model.transform(df)
 
     row = out.select("prediction", "probability").first()
 
@@ -112,6 +123,16 @@ def run_explanations(data: dict):
     """
     Retorna importâncias globais das features do modelo.
     """
+    # Tenta sklearn primeiro
+    skl = _get_sklearn_model_if_configured()
+    if skl is not None:
+        model = skl
+    else:
+        # Usa Spark model
+        model = _spark_model or get_spark_model()
+        if model is None:
+            raise RuntimeError('Nenhum modelo disponível: configure SKLEARN_MODEL_PATH ou garanta MODEL_PATH com pipeline Spark')
+    
     global_imp = compute_global_importance(model, feature_names)
     return {
         "global_feature_importances": global_imp
