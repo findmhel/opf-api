@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+WORKDIR /app
+
+# Instalar dependências básicas
+COPY requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Dependências para sklearn model serving
+COPY requirements-sklearn.txt requirements-sklearn.txt
+RUN pip install --no-cache-dir -r requirements-sklearn.txt
+
+COPY . .
+
+# Copy and set entrypoint for downloads + startup
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# By default the API will try to load MODEL_PATH (spark) or SKLEARN_MODEL_PATH if set.
+ENV SKLEARN_MODEL_PATH=/opt/render/project/src/app/model/sk_model.joblib
+ENV PARQUET_FALLBACK_CSV=/opt/render/project/src/data/features.csv
+
+# Render provides the port via the PORT env var. Default to 8000 if not set.
+ENV PORT=${PORT:-8000}
+
+EXPOSE ${PORT}
+
+ENTRYPOINT ["/entrypoint.sh"]
